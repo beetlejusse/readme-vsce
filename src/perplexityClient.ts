@@ -1,27 +1,44 @@
-import axios, { AxiosResponse } from "axios";
 import * as vscode from "vscode";
-import { CodeChunk, PerplexityRequest, PerplexityResponse } from "./types";
+import { CodeChunk } from "./types";
+import Perplexity from '@perplexity-ai/perplexity_ai';
 
 export class PerplexityClient {
-    [x: string]: any;
-    private readonly apiKey: string;
-    private readonly apiURL: string = "https://api.perplexity.ai"
+    private readonly client: Perplexity;
     private readonly model: string = "sonar-medium-online";
     private readonly maxTokens: number = 5000;
 
     constructor() {
-        /**
-         * @ hardcoding api key for now, will use vscode secrets later
-         */
-        this.apiKey = process.env.PERPLEXITY_API_KEY!
+        const apiKey = this.getApiKey();
+        if (!apiKey) {
+            throw new Error('Perplexity API key not configured. Please set your API key in VS Code settings.');
+        }
+        
+        this.client = new Perplexity({
+            apiKey: apiKey
+        });
     }
 
-    async generateReadmeChunk(chunk: CodeChunk, isFirstChunk: boolean = false) {
+    private getApiKey(): string | undefined {
+        // First try to get from VS Code settings
+        const config = vscode.workspace.getConfiguration('readmeGenerator');
+        const settingsApiKey = config.get<string>('perplexityApiKey');
+        
+        if (settingsApiKey && settingsApiKey.trim() !== '') {
+            return settingsApiKey;
+        }
+
+        // Fallback to environment variable
+        return process.env.PERPLEXITY_API_KEY;
+    }
+
+    async generateReadmeChunk(chunk: CodeChunk, isFirstChunk: boolean = false): Promise<string> {
         try {
             const systemPrompt = this.createSystemPrompt(isFirstChunk);
             const userPrompt = this.createUserPrompt(chunk);
 
-            const request: PerplexityRequest = {
+            console.log(`🤖 Making API request for chunk ${chunk.chunkIndex + 1}`);
+
+            const response = await this.client.chat.completions.create({
                 model: this.model,
                 messages: [
                     { role: "system", content: systemPrompt },
@@ -30,15 +47,11 @@ export class PerplexityClient {
                 max_tokens: this.maxTokens,
                 temperature: 0.3,
                 stream: false
-            };
+            });
 
-            console.log(`🤖 Making API request for chunk ${chunk.chunkIndex + 1}`);
-
-            const response = await this.makeApiRequest(request);
-
-            return this.extractContentFromResponse(response)
+            return this.extractContentFromResponse(response);
         } catch (error) {
-            console.error(`Error generating Readme Chunk ${chunk.chunkIndex}`, error)
+            console.error(`Error generating Readme Chunk ${chunk.chunkIndex}`, error);
             throw new Error(`Failed to generate README chunk: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     }
@@ -126,40 +139,7 @@ CODE FILES:`;
         return prompt;
     }
 
-    private async makeApiRequest(request: PerplexityRequest): Promise<PerplexityResponse> {
-        try {
-            const response: AxiosResponse<PerplexityResponse> = await axios.post(
-                `${this.apiURL}/chat/completions`,
-                request,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${this.apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: 60000
-                }
-            )
-
-            if (response.status !== 200) {
-                throw new Error(`API request failed with status ${response.status}: ${response.statusText}`);
-            }
-
-            return response.data;
-        } catch (error) {
-            if (axios.isAxiosError(error)) {
-                if (error.response?.status === 401) {
-                    throw new Error('Invalid API key. Please check your Perplexity API key configuration.');
-                } else if (error.response?.status === 429) {
-                    throw new Error('API rate limit exceeded. Please wait and try again.');
-                } else if (error.response?.status === 400) {
-                    throw new Error('Invalid request format. Please check your input.');
-                }
-            }
-            throw error;
-        }
-    }
-
-    private extractContentFromResponse(response: PerplexityResponse): string {
+    private extractContentFromResponse(response: any): string {
         if (!response.choices || response.choices.length === 0) {
             throw new Error('No response choices returned from API');
         }
@@ -175,19 +155,19 @@ CODE FILES:`;
     }
 
     public validateAPIKey(): boolean {
-        return !!this.apiKey && this.apiKey.trim() !== '' && this.apiKey !== process.env.PERPLEXITY_API_KEY
+        const apiKey = this.getApiKey();
+        return !!apiKey && apiKey.trim() !== '';
     }
 
     async testConnection(): Promise<boolean> {
         try {
-            const testRequest: PerplexityRequest = {
+            await this.client.chat.completions.create({
                 model: this.model,
                 messages: [
-                    {role: 'user', content: 'Hello, this is a test message.'}
-                ], max_tokens: 50
-            }
-
-            await this.makeApiRequest(testRequest);
+                    { role: 'user', content: 'Hello, this is a test message.' }
+                ],
+                max_tokens: 50
+            });
             return true;
         } catch (error) {
             console.error('API connection test failed:', error);
