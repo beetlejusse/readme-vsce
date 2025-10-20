@@ -17,7 +17,7 @@ export class CodebaseAnalyzer {
         this.gitignoreParser = new GitignoreParser(workspaceRoot);
         this.perplexityClient = new PerplexityClient();
 
-        const config = vscode.workspace.getConfiguration('generate-readme');
+        const config = vscode.workspace.getConfiguration('readmeGenerator');
         this.maxFileSize = config.get<number>('maxFileSize', 1048576);
     }
 
@@ -97,11 +97,14 @@ export class CodebaseAnalyzer {
                 fileInfos.push(fileInfo);
 
                 if (i % 10 === 0 || i === filePaths.length - 1) {
+                    const fileName = path.basename(filePath);
+                    console.log(`📄 Processing: ${fileName} (${i + 1}/${filePaths.length})`);
+                    
                     progressCallback({
                         stage: 'analyzing',
                         message: `Processing files... (${i + 1}/${filePaths.length})`,
                         percentage: 25 + (30 * (i + 1) / filePaths.length),
-                        currentFile: path.basename(filePath),
+                        currentFile: fileName,
                         totalFiles: filePaths.length,
                         processedFiles: i + 1
                     });
@@ -119,36 +122,63 @@ export class CodebaseAnalyzer {
         const hasFile = (name: string) => fileInfos.some(f => path.basename(f.path).toLowerCase() === name);
         const hasExtension = (ext: string) => fileInfos.some(f => f.path.endsWith(ext));
 
+        console.log('🔍 Detecting project type...');
+        
         if (hasFile('package.json')) {
+            console.log('📦 Found package.json - Node.js project detected');
             if (hasExtension('.jsx') || hasExtension('.tsx')) {
+                console.log('⚛️ React components found - React Application');
                 return 'React Application';
             }
             if (hasExtension('.vue')) {
+                console.log('🟢 Vue components found - Vue.js Application');
                 return 'Vue.js Application';
             }
             if (hasFile('next.config.js') || hasFile('next.config.ts')) {
+                console.log('⚡ Next.js config found - Next.js Application');
                 return 'Next.js Application';
             }
+            console.log('📦 Node.js Application');
             return 'Node.js Application';
         }
 
         if (hasFile('setup.py') || hasFile('requirements.txt')) {
+            console.log('🐍 Python project detected');
             if (hasFile('manage.py')) {
+                console.log('🌐 Django framework detected - Django Application');
                 return 'Django Application';
             }
+            console.log('🐍 Python Project');
             return 'Python Project';
         }
 
-        if (hasFile('pom.xml')) return 'Maven Java Project';
-        if (hasFile('build.gradle')) return 'Gradle Java Project';
-        if (hasFile('go.mod')) return 'Go Module';
-        if (hasFile('cargo.toml')) return 'Rust Project';
-        if (hasFile('pubspec.yaml')) return 'Flutter Application';
+        if (hasFile('pom.xml')) {
+            console.log('☕ Maven Java project detected');
+            return 'Maven Java Project';
+        }
+        if (hasFile('build.gradle')) {
+            console.log('☕ Gradle Java project detected');
+            return 'Gradle Java Project';
+        }
+        if (hasFile('go.mod')) {
+            console.log('🐹 Go module detected');
+            return 'Go Module';
+        }
+        if (hasFile('cargo.toml')) {
+            console.log('🦀 Rust project detected');
+            return 'Rust Project';
+        }
+        if (hasFile('pubspec.yaml')) {
+            console.log('📱 Flutter application detected');
+            return 'Flutter Application';
+        }
 
         if (languages.length > 0) {
+            console.log(`💻 ${languages[0]} project detected`);
             return `${languages[0]} Project`;
         }
 
+        console.log('📁 Generic software project detected');
         return 'Software Project';
     }
 
@@ -258,7 +288,7 @@ export class CodebaseAnalyzer {
         });
 
         for (const file of sortedFiles) {
-            const fileTokens = this.perplexityClient.estimateTokens(file.content);
+            const fileTokens = this.perplexityClient.estimateTokenCount(file.content);
 
             if (currentTokens + fileTokens > this.maxTokensPerChunk && currentChunk.length > 0) {
                 chunks.push(this.createChunk(currentChunk, currentTokens, chunkIndex));
@@ -291,7 +321,7 @@ export class CodebaseAnalyzer {
             return { isValid: false, error: 'Workspace root does not exist' };
         }
 
-        if (!this.perplexityClient.validateApiKey()) {
+        if (!this.perplexityClient.validateAPIKey()) {
             return {
                 isValid: false,
                 error: 'Invalid Perplexity API key. Please configure your API key in settings.'
@@ -309,7 +339,9 @@ export class CodebaseAnalyzer {
             percentage: 10
         });
 
+        console.log('🔍 Discovering files in workspace...');
         const allFiles = await this.discoverFiles();
+        console.log(`📁 Found ${allFiles.length} files to analyze`);
 
         progressCallback({
             stage: 'analyzing',
@@ -326,7 +358,11 @@ export class CodebaseAnalyzer {
             percentage: 60
         });
 
+        console.log('📊 Analyzing project structure...');
         const analysis = this.analyzeProjectStructure(fileInfos);
+        console.log(`✅ Project type detected: ${analysis.projectType}`);
+        console.log(`💻 Languages found: ${analysis.languages.join(', ')}`);
+        console.log(`📦 Dependencies: ${analysis.dependencies.length} found`);
 
         progressCallback({
             stage: 'chunking',
@@ -334,6 +370,7 @@ export class CodebaseAnalyzer {
             percentage: 75
         });
 
+        console.log('📦 Creating code chunks for AI processing...');
         const chunks = this.createCodeChunks(fileInfos);
 
         progressCallback({
@@ -342,6 +379,7 @@ export class CodebaseAnalyzer {
             percentage: 85
         });
 
+        console.log(`✅ Analysis completed! Created ${chunks.length} chunks for AI processing`);
         return { analysis, chunks };
     }
 }
