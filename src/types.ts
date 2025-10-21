@@ -36,41 +36,11 @@ export interface ProjectStructure {
 }
 
 /**
- * Request payload for Perplexity API
- */
-export interface PerplexityRequest {
-    model: string;
-    messages: PerplexityMessage[];
-    max_tokens?: number;
-    temperature?: number;
-    stream?: boolean;
-}
-
-/**
  * Message format for Perplexity API
  */
 export interface PerplexityMessage {
     role: 'system' | 'user' | 'assistant';
     content: string;
-}
-
-/**
- * Response from Perplexity API
- */
-export interface PerplexityResponse {
-    id: string;
-    model: string;
-    created: number;
-    usage: {
-        prompt_tokens: number;
-        completion_tokens: number;
-        total_tokens: number;
-    };
-    choices: Array<{
-        index: number;
-        finish_reason: string;
-        message: PerplexityMessage;
-    }>;
 }
 
 /**
